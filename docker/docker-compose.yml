@@ -10,6 +10,7 @@ services:
     volumes:
       - ../config:/app/config:ro
       - ../output:/app/output
+      - ../trendradar:/app/trendradar:ro
 
     environment:
       - TZ=Asia/Shanghai
@@ -45,6 +46,7 @@ services:
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_MODEL=${AI_MODEL:-}
       - AI_API_BASE=${AI_API_BASE:-}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY:-}
       # 远程存储配置（S3 兼容协议）
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}

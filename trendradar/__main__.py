@@ -1351,7 +1351,7 @@ class NewsAnalyzer:
                 rss_items.append({
                     "title": item.title,
                     "feed_id": feed_id,
-                    "feed_name": id_to_name.get(feed_id, feed_id),
+                    "feed_name": getattr(item, 'feed_name', None) or id_to_name.get(feed_id, feed_id),
                     "url": item.url,
                     "published_at": item.published_at,
                     "summary": item.summary,

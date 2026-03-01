@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 import requests
 
 from .batch import add_batch_headers, get_max_batch_header_size
+from .feishu_card import build_feishu_card
 from .formatters import convert_markdown_to_mrkdwn, strip_markdown
 
 
@@ -94,7 +95,7 @@ def send_to_feishu(
     standalone_data: Optional[Dict] = None,
 ) -> bool:
     """
-    发送到飞书（支持分批发送，支持热榜+RSS合并+独立展示区）
+    发送到飞书（使用卡片消息）
 
     Args:
         webhook_url: 飞书 Webhook URL
@@ -104,16 +105,14 @@ def send_to_feishu(
         proxy_url: 代理 URL（可选）
         mode: 报告模式 (daily/current)
         account_label: 账号标签（多账号时显示）
-        batch_size: 批次大小（字节）
-        batch_interval: 批次发送间隔（秒）
-        split_content_func: 内容分批函数
         get_time_func: 获取当前时间的函数
         rss_items: RSS 统计条目列表（可选，用于合并推送）
-        rss_new_items: RSS 新增条目列表（可选，用于新增区块）
 
     Returns:
         bool: 发送是否成功
     """
+    import json
+
     headers = {"Content-Type": "application/json"}
     proxies = None
     if proxy_url:
@@ -122,88 +121,43 @@ def send_to_feishu(
     # 日志前缀
     log_prefix = f"飞书{account_label}" if account_label else "飞书"
 
-    # 渲染 AI 分析内容（如果有）
-    ai_content = None
-    ai_stats = None
-    if ai_analysis:
-        ai_content = _render_ai_analysis(ai_analysis, "feishu")
-        # 提取 AI 分析统计数据（只要 AI 分析成功就显示）
-        if getattr(ai_analysis, "success", False):
-            ai_stats = {
-                "total_news": getattr(ai_analysis, "total_news", 0),
-                "analyzed_news": getattr(ai_analysis, "analyzed_news", 0),
-                "max_news_limit": getattr(ai_analysis, "max_news_limit", 0),
-                "hotlist_count": getattr(ai_analysis, "hotlist_count", 0),
-                "rss_count": getattr(ai_analysis, "rss_count", 0),
-                "ai_mode": getattr(ai_analysis, "ai_mode", ""),
-            }
-
-    # 预留批次头部空间，避免添加头部后超限
-    header_reserve = get_max_batch_header_size("feishu")
-    batches = split_content_func(
-        report_data,
-        "feishu",
-        update_info,
-        max_bytes=batch_size - header_reserve,
+    # 构建卡片消息
+    payload = build_feishu_card(
+        report_data=report_data,
+        update_info=update_info,
         mode=mode,
+        get_time_func=get_time_func,
         rss_items=rss_items,
-        rss_new_items=rss_new_items,
-        ai_content=ai_content,
-        standalone_data=standalone_data,
-        ai_stats=ai_stats,
-        report_type=report_type,
+        show_new_section=True,
     )
 
-    # 统一添加批次头部（已预留空间，不会超限）
-    batches = add_batch_headers(batches, "feishu", batch_size)
+    # 检查卡片大小（飞书限制 30KB）
+    payload_size = len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    print(f"{log_prefix}发送卡片消息，大小：{payload_size} 字节 [{report_type}]")
 
-    print(f"{log_prefix}消息分为 {len(batches)} 批次发送 [{report_type}]")
+    if payload_size > 30000:
+        print(f"{log_prefix}警告：卡片消息超过 30KB 限制，可能发送失败 [{report_type}]")
 
-    # 逐批发送
-    for i, batch_content in enumerate(batches, 1):
-        content_size = len(batch_content.encode("utf-8"))
-        print(
-            f"发送{log_prefix}第 {i}/{len(batches)} 批次，大小：{content_size} 字节 [{report_type}]"
+    try:
+        response = requests.post(
+            webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
         )
-
-        # 飞书 webhook 只显示 content.text，所有信息都整合到 text 中
-        payload = {
-            "msg_type": "text",
-            "content": {
-                "text": batch_content,
-            },
-        }
-
-        try:
-            response = requests.post(
-                webhook_url, headers=headers, json=payload, proxies=proxies, timeout=30
-            )
-            if response.status_code == 200:
-                result = response.json()
-                # 检查飞书的响应状态
-                if result.get("StatusCode") == 0 or result.get("code") == 0:
-                    print(f"{log_prefix}第 {i}/{len(batches)} 批次发送成功 [{report_type}]")
-                    # 批次间间隔
-                    if i < len(batches):
-                        time.sleep(batch_interval)
-                else:
-                    error_msg = result.get("msg") or result.get("StatusMessage", "未知错误")
-                    print(
-                        f"{log_prefix}第 {i}/{len(batches)} 批次发送失败 [{report_type}]，错误：{error_msg}"
-                    )
-                    return False
+        if response.status_code == 200:
+            result = response.json()
+            # 检查飞书的响应状态
+            if result.get("StatusCode") == 0 or result.get("code") == 0:
+                print(f"{log_prefix}卡片消息发送成功 [{report_type}]")
+                return True
             else:
-                print(
-                    f"{log_prefix}第 {i}/{len(batches)} 批次发送失败 [{report_type}]，状态码：{response.status_code}"
-                )
+                error_msg = result.get("msg") or result.get("StatusMessage", "未知错误")
+                print(f"{log_prefix}卡片消息发送失败 [{report_type}]，错误：{error_msg}")
                 return False
-        except Exception as e:
-            print(f"{log_prefix}第 {i}/{len(batches)} 批次发送出错 [{report_type}]：{e}")
+        else:
+            print(f"{log_prefix}卡片消息发送失败 [{report_type}]，状态码：{response.status_code}")
             return False
-
-    print(f"{log_prefix}所有 {len(batches)} 批次发送完成 [{report_type}]")
-
-    return True
+    except Exception as e:
+        print(f"{log_prefix}卡片消息发送出错 [{report_type}]：{e}")
+        return False
 
 
 def send_to_dingtalk(

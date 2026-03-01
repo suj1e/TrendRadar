@@ -1,0 +1,29 @@
+# 敏感配置文件
+docker/.env
+*.env.local
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 输出文件（运行时生成，不需要提交）
+output/
+
+# Claude Code
+.claude/
+
+# 备份文件
+*.backup
+*.bak

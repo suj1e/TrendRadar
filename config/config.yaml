@@ -41,7 +41,7 @@ app:
 # ===============================================================
 schedule:
   enabled: true                         # 是否启用调度系统
-  preset: "morning_evening"             # 预设模板名称（见上方说明）
+  preset: "always_on"                   # 预设模板名称（见上方说明）
 
 
 # ===============================================================
@@ -121,7 +121,7 @@ rss:
     - id: "ruanyifeng"
       name: "阮一峰的网络日志"
       url: "http://www.ruanyifeng.com/blog/atom.xml"
-      # max_age_days: 7               # 示例：推送7天内的文章（更新较慢的博客）
+      max_age_days: 7                 # 推送7天内的文章
     
     - id: "yahoo-finance"
       name: "雅虎财经"
