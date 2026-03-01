@@ -21,9 +21,6 @@ __pycache__/
 # 输出文件（运行时生成，不需要提交）
 output/
 
-# Claude Code
-.claude/
-
 # 备份文件
 *.backup
 *.bak
