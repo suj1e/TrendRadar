@@ -3371,6 +3371,83 @@ ai_translation:
 
 <br>
 
+### 13. 天气通知（v6.1.0 新增）
+
+<details>
+<summary>👉 点击展开：<strong>定时推送天气信息</strong></summary>
+<br>
+
+TrendRadar 现在支持定时推送天气通知，让你在接收新闻的同时也能了解天气情况。
+
+#### 快速配置
+
+**配置位置**：`config/config.yaml`
+
+```yaml
+weather:
+  enabled: true                       # 启用天气通知
+
+  # 数据源（默认 wttr.in，免费无需 API Key）
+  provider: "wttr"
+
+  # 多地点配置
+  locations:
+    - name: "上海宝山"
+      query: "Shanghai"
+    - name: "安徽池州"
+      query: "Chizhou"
+
+  # 推送时间
+  push:
+    schedule:
+      - time: "07:00"
+        type: "morning"
+        include_forecast: true        # 包含今日预报
+      - time: "18:00"
+        type: "evening"
+        include_forecast: false
+```
+
+#### 支持的数据源
+
+| 数据源 | provider | 需要 API Key | 特点 |
+|-------|----------|-------------|------|
+| **wttr.in** (默认) | `wttr` | ❌ | 免费、零配置、支持中文 |
+| 和风天气 | `qweather` | ✅ | 国内数据准确 |
+| 心知天气 | `seniverse` | ✅ | 国内数据准确 |
+| OpenWeatherMap | `openweathermap` | ✅ | 国际化支持好 |
+
+#### 推送效果示例
+
+```
+🌤️ 晨间天气
+
+📍 上海宝山 ⛅ 11°C
+   局部多云，体感 10°C
+   湿度 65% | 东南风 8km/h
+
+   📊 今日 8~14°C ☁️ 多云
+
+📍 安徽池州 🌧️ 8°C
+   周边有零星小雨，体感 5°C
+   湿度 90% | 北风 14km/h
+
+   📊 今日 7~12°C 🌧️ 小雨
+```
+
+#### 配置说明
+
+- **locations**: 支持配置多个地点，每个地点需指定 `name`（显示名称）和 `query`（查询字符串）
+- **schedule**: 支持配置多个推送时间点
+  - `time`: 推送时间 (HH:MM)
+  - `type`: 推送类型 (`morning` | `evening` | `tomorrow`)
+  - `include_forecast`: 是否包含天气预报
+- 天气通知会推送到已配置的通知渠道（飞书、钉钉、企业微信等）
+
+</details>
+
+<br>
+
 ## ✨ AI 智能分析
 
 TrendRadar v3.0.0 新增了基于 **MCP (Model Context Protocol)** 的 AI 分析功能，让你可以通过自然语言与新闻数据对话，进行深度分析。
