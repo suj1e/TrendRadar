@@ -1629,6 +1629,36 @@ class NewsAnalyzer:
 
         return html_file
 
+    def _run_weather_push(self) -> None:
+        """执行天气推送（独立于新闻推送）"""
+        from trendradar.weather import run_weather_push
+
+        try:
+            weather_config = self.ctx.config.get("WEATHER", {})
+            if not weather_config.get("ENABLED", False):
+                return
+
+            # 获取代理配置
+            advanced = self.ctx.config.get("advanced", {})
+            crawler_config = advanced.get("crawler", {})
+            proxy_url = None
+            if crawler_config.get("use_proxy", False):
+                proxy_url = crawler_config.get("default_proxy", "")
+
+            # 执行天气推送
+            run_weather_push(
+                config=self.ctx.config,
+                storage_backend=self.ctx.get_storage_manager(),
+                dispatcher=self.ctx.create_notification_dispatcher(),
+                get_time_func=self.ctx.get_time,
+                proxy_url=proxy_url,
+            )
+
+        except Exception as e:
+            print(f"[天气] 推送失败: {e}")
+            if self.ctx.config.get("DEBUG", False):
+                raise
+
     def run(self) -> None:
         """执行分析流程"""
         try:
@@ -1648,6 +1678,9 @@ class NewsAnalyzer:
                 rss_items=rss_items, rss_new_items=rss_new_items,
                 raw_rss_items=raw_rss_items
             )
+
+            # 执行天气推送（独立于新闻推送）
+            self._run_weather_push()
 
         except Exception as e:
             print(f"分析流程执行出错: {e}")

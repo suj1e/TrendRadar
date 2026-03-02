@@ -1150,3 +1150,500 @@ class NotificationDispatcher:
                 results.append(False)
 
         return any(results) if results else False
+
+    # === 天气通知方法 ===
+
+    def dispatch_weather(
+        self,
+        weather_data_list: List[Dict],
+        schedule_type: str = "morning",
+        include_forecast: bool = True,
+        proxy_url: Optional[str] = None,
+        custom_channels: Optional[Dict] = None,
+    ) -> Dict[str, bool]:
+        """
+        分发天气通知到所有已配置的渠道
+
+        Args:
+            weather_data_list: 天气数据列表，每个元素包含:
+                - location: 地点名称
+                - temp: 当前温度
+                - feels_like: 体感温度
+                - humidity: 湿度
+                - condition: 天气状况
+                - icon: 天气图标
+                - forecast: 预报数据（可选）
+            schedule_type: 推送类型 (morning, evening, tomorrow)
+            include_forecast: 是否包含预报
+            proxy_url: 代理 URL（可选）
+            custom_channels: 自定义渠道配置（可选，覆盖全局配置）
+
+        Returns:
+            Dict[str, bool]: 每个渠道的发送结果
+        """
+        from trendradar.weather.renderer import (
+            render_weather_feishu,
+            render_weather_dingtalk,
+            render_weather_wework,
+            render_weather_telegram,
+            render_weather_email,
+            render_weather_slack,
+            render_weather_ntfy,
+            render_weather_bark,
+            get_schedule_title,
+        )
+        from trendradar.weather.providers import WeatherData
+
+        if not weather_data_list:
+            print("[天气通知] 没有天气数据，跳过通知")
+            return {}
+
+        # 转换为 WeatherData 对象（如果是字典）
+        weather_objects = []
+        for item in weather_data_list:
+            if isinstance(item, WeatherData):
+                weather_objects.append(item)
+            elif isinstance(item, dict):
+                weather_objects.append(WeatherData(**item))
+
+        results = {}
+        title = get_schedule_title(schedule_type)
+
+        # 使用自定义渠道或全局渠道
+        use_config = custom_channels if custom_channels else self.config
+
+        # 飞书
+        if use_config.get("FEISHU_WEBHOOK_URL"):
+            results["feishu"] = self._send_weather_feishu(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # 钉钉
+        if use_config.get("DINGTALK_WEBHOOK_URL"):
+            results["dingtalk"] = self._send_weather_dingtalk(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # 企业微信
+        if use_config.get("WEWORK_WEBHOOK_URL"):
+            results["wework"] = self._send_weather_wework(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # Telegram
+        if use_config.get("TELEGRAM_BOT_TOKEN") and use_config.get("TELEGRAM_CHAT_ID"):
+            results["telegram"] = self._send_weather_telegram(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # ntfy
+        if use_config.get("NTFY_SERVER_URL") and use_config.get("NTFY_TOPIC"):
+            results["ntfy"] = self._send_weather_ntfy(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # Bark
+        if use_config.get("BARK_URL"):
+            results["bark"] = self._send_weather_bark(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # Slack
+        if use_config.get("SLACK_WEBHOOK_URL"):
+            results["slack"] = self._send_weather_slack(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        # 通用 Webhook
+        if use_config.get("GENERIC_WEBHOOK_URL"):
+            results["generic_webhook"] = self._send_weather_generic(
+                weather_objects, schedule_type, include_forecast, proxy_url, use_config
+            )
+
+        return results
+
+    def _send_weather_feishu(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到飞书"""
+        import requests
+        from trendradar.weather.renderer import render_weather_feishu, get_schedule_title
+
+        content = render_weather_feishu(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        webhooks = parse_multi_account_config(config["FEISHU_WEBHOOK_URL"])
+        webhooks = limit_accounts(webhooks, self.max_accounts, "飞书")
+
+        results = []
+        for i, webhook_url in enumerate(webhooks):
+            if not webhook_url:
+                continue
+
+            account_label = f"账号{i+1}" if len(webhooks) > 1 else ""
+            try:
+                payload = {
+                    "msg_type": "interactive",
+                    "card": {
+                        "header": {
+                            "title": {"tag": "plain_text", "content": title},
+                            "template": "blue",
+                        },
+                        "elements": [
+                            {"tag": "markdown", "content": content}
+                        ],
+                    },
+                }
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(webhook_url, json=payload, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ 飞书{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ 飞书{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_dingtalk(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到钉钉"""
+        import requests
+        from trendradar.weather.renderer import render_weather_dingtalk, get_schedule_title
+
+        content = render_weather_dingtalk(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        webhooks = parse_multi_account_config(config["DINGTALK_WEBHOOK_URL"])
+        webhooks = limit_accounts(webhooks, self.max_accounts, "钉钉")
+
+        results = []
+        for i, webhook_url in enumerate(webhooks):
+            if not webhook_url:
+                continue
+
+            account_label = f"账号{i+1}" if len(webhooks) > 1 else ""
+            try:
+                payload = {
+                    "msgtype": "markdown",
+                    "markdown": {"title": title, "text": content},
+                }
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(webhook_url, json=payload, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ 钉钉{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ 钉钉{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_wework(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到企业微信"""
+        import requests
+        from trendradar.weather.renderer import render_weather_wework, get_schedule_title
+
+        content = render_weather_wework(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        webhooks = parse_multi_account_config(config["WEWORK_WEBHOOK_URL"])
+        webhooks = limit_accounts(webhooks, self.max_accounts, "企业微信")
+
+        results = []
+        for i, webhook_url in enumerate(webhooks):
+            if not webhook_url:
+                continue
+
+            account_label = f"账号{i+1}" if len(webhooks) > 1 else ""
+            try:
+                payload = {
+                    "msgtype": "markdown",
+                    "markdown": {"content": f"### {title}\n\n{content}"},
+                }
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(webhook_url, json=payload, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ 企业微信{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ 企业微信{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_telegram(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到 Telegram"""
+        import requests
+        from trendradar.weather.renderer import render_weather_telegram, get_schedule_title
+
+        content = render_weather_telegram(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        tokens = parse_multi_account_config(config["TELEGRAM_BOT_TOKEN"])
+        chat_ids = parse_multi_account_config(config["TELEGRAM_CHAT_ID"])
+
+        if not tokens or not chat_ids:
+            return False
+
+        results = []
+        for i in range(min(len(tokens), len(chat_ids), self.max_accounts)):
+            token = tokens[i]
+            chat_id = chat_ids[i]
+
+            if not token or not chat_id:
+                continue
+
+            account_label = f"账号{i+1}" if len(tokens) > 1 else ""
+            try:
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                payload = {
+                    "chat_id": chat_id,
+                    "text": f"<b>{title}</b>\n\n{content}",
+                    "parse_mode": "HTML",
+                }
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(url, json=payload, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ Telegram{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ Telegram{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_ntfy(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到 ntfy"""
+        import requests
+        from trendradar.weather.renderer import render_weather_ntfy, get_schedule_title
+
+        content = render_weather_ntfy(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        server_url = config["NTFY_SERVER_URL"]
+        topics = parse_multi_account_config(config["NTFY_TOPIC"])
+        tokens = parse_multi_account_config(config.get("NTFY_TOKEN", ""))
+
+        if not server_url or not topics:
+            return False
+
+        topics = limit_accounts(topics, self.max_accounts, "ntfy")
+
+        results = []
+        for i, topic in enumerate(topics):
+            if not topic:
+                continue
+
+            token = tokens[i] if tokens and i < len(tokens) else ""
+            account_label = f"账号{i+1}" if len(topics) > 1 else ""
+
+            try:
+                url = f"{server_url.rstrip('/')}/{topic}"
+                headers = {"Title": title, "Markdown": "yes"}
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(
+                    url, data=content.encode("utf-8"),
+                    headers=headers, proxies=proxies, timeout=30
+                )
+                resp.raise_for_status()
+
+                print(f"✅ ntfy{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ ntfy{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_bark(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到 Bark"""
+        import requests
+        import urllib.parse
+        from trendradar.weather.renderer import render_weather_bark, get_schedule_title
+
+        content = render_weather_bark(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        urls = parse_multi_account_config(config["BARK_URL"])
+        urls = limit_accounts(urls, self.max_accounts, "Bark")
+
+        results = []
+        for i, bark_url in enumerate(urls):
+            if not bark_url:
+                continue
+
+            account_label = f"账号{i+1}" if len(urls) > 1 else ""
+            try:
+                title_encoded = urllib.parse.quote(title)
+                body = urllib.parse.quote(content)
+                url = f"{bark_url.rstrip('/')}/{title_encoded}/{body}"
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.get(url, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ Bark{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ Bark{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_slack(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到 Slack"""
+        import requests
+        from trendradar.weather.renderer import render_weather_slack, get_schedule_title
+
+        content = render_weather_slack(weather_objects, schedule_type, include_forecast)
+        title = get_schedule_title(schedule_type)
+
+        webhooks = parse_multi_account_config(config["SLACK_WEBHOOK_URL"])
+        webhooks = limit_accounts(webhooks, self.max_accounts, "Slack")
+
+        results = []
+        for i, webhook_url in enumerate(webhooks):
+            if not webhook_url:
+                continue
+
+            account_label = f"账号{i+1}" if len(webhooks) > 1 else ""
+            try:
+                payload = {
+                    "blocks": [
+                        {
+                            "type": "header",
+                            "text": {"type": "plain_text", "text": title},
+                        },
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": content},
+                        },
+                    ]
+                }
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(webhook_url, json=payload, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ Slack{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ Slack{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False
+
+    def _send_weather_generic(
+        self,
+        weather_objects: List,
+        schedule_type: str,
+        include_forecast: bool,
+        proxy_url: Optional[str],
+        config: Dict,
+    ) -> bool:
+        """发送天气到通用 Webhook"""
+        import requests
+        import json
+        from trendradar.weather.renderer import render_weather_content, get_schedule_title
+
+        content = render_weather_content(weather_objects, schedule_type, include_forecast, "text")
+        title = get_schedule_title(schedule_type)
+
+        urls = parse_multi_account_config(config.get("GENERIC_WEBHOOK_URL", ""))
+        templates = parse_multi_account_config(config.get("GENERIC_WEBHOOK_TEMPLATE", ""))
+
+        if not urls:
+            return False
+
+        urls = limit_accounts(urls, self.max_accounts, "通用Webhook")
+        results = []
+
+        for i, url in enumerate(urls):
+            if not url:
+                continue
+
+            template = ""
+            if templates:
+                if i < len(templates):
+                    template = templates[i]
+                elif len(templates) == 1:
+                    template = templates[0]
+
+            account_label = f"账号{i+1}" if len(urls) > 1 else ""
+
+            try:
+                if template:
+                    payload_str = template.replace("{title}", title).replace("{content}", content)
+                    payload = json.loads(payload_str)
+                else:
+                    payload = {"title": title, "content": content}
+
+                proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+                resp = requests.post(url, json=payload, proxies=proxies, timeout=30)
+                resp.raise_for_status()
+
+                print(f"✅ 通用Webhook{account_label} 天气通知发送成功")
+                results.append(True)
+            except Exception as e:
+                print(f"❌ 通用Webhook{account_label} 天气通知发送失败: {e}")
+                results.append(False)
+
+        return any(results) if results else False

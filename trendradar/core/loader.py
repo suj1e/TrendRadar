@@ -313,6 +313,25 @@ def _load_ai_translation_config(config_data: Dict) -> Dict:
     }
 
 
+def _load_weather_config(config_data: Dict) -> Dict:
+    """加载天气通知配置"""
+    weather = config_data.get("weather", {})
+    push = weather.get("push", {})
+
+    enabled_env = _get_env_bool("WEATHER_ENABLED")
+
+    return {
+        "ENABLED": enabled_env if enabled_env is not None else weather.get("enabled", False),
+        "PROVIDER": _get_env_str("WEATHER_PROVIDER") or weather.get("provider", "wttr"),
+        "PROVIDERS": weather.get("providers", {}),
+        "LOCATIONS": weather.get("locations", []),
+        "PUSH": {
+            "SCHEDULE": push.get("schedule", []),
+            "CHANNELS": push.get("channels", {}),
+        },
+    }
+
+
 def _load_storage_config(config_data: Dict) -> Dict:
     """加载存储配置"""
     storage = config_data.get("storage", {})
@@ -543,6 +562,9 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
     # AI 翻译配置
     config["AI_TRANSLATION"] = _load_ai_translation_config(config_data)
+
+    # 天气通知配置
+    config["WEATHER"] = _load_weather_config(config_data)
 
     # 推送内容显示配置
     config["DISPLAY"] = _load_display_config(config_data)
